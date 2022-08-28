@@ -2,10 +2,11 @@
 import pandas as pd
 import argparse
 import os
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder,MinMaxScaler,StandardScaler
 from keras.layers import Dense
 from keras.models import Model 
-from keras.layers import Input
+from keras.layers import Input,Embedding,Reshape,concatenate,Flatten,Lambda,Dropout
+from keras.regularizers import l2, l1_l2
 #全局数据参数
 traindata_srcpath = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data"
 testdata_srcpath = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test"
@@ -27,6 +28,37 @@ num_examples = {
     'train': 32561,
     'validation': 16281
 }
+
+
+#将输入进行embedding化
+def embedding_input(name,n_in,n_out,reg):
+    inp = Input(shape=(1,),dtype='int64',name=name)
+    return inp, Embedding(n_in,n_out,input_length=1,embeddings_regularizer=l2(reg))(inp)
+
+#将输入值进行连续化处理
+def continous_input(name):
+    inp = Input(shape=(1,),dtype='float32',name=name)
+    return inp,Reshape((1,1))(inp)
+
+#value值转化为idx
+def val2idx(df,cols):
+    val_types = dict()
+    for c in cols:
+        val_types[c] = df[c].unique()
+    
+    val_to_idx = dict()
+    for k,v in val_types.items():
+        val_to_idx[k] = {o: i for i,o in enumerate(val_types[k])}
+
+    for k,v in val_to_idx.items():
+        df[k] = df[k].apply(lambda x: v[x])
+    
+    unique_vals = dict()
+    for c in cols:
+        unique_vals[c] = df[c].nunique()
+    
+    return df,unique_vals
+
 
 #one hot 向量化
 def onehot(x):
@@ -134,10 +166,123 @@ def wide(df_train,df_test,wide_cols,x_cols,target,model_type,method):
     return 0
 
 def deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method):
-    return 0
+    df_train['IS_TRAIN'] = 1
+    df_test['IS_TRAIN'] = 0
+    df_deep = pd.concat([df_train,df_test])
+    deep_cols = embedding_cols + cont_cols
+    df_deep = df_deep[deep_cols + [target,'IS_TRAIN']]
+
+    df_deep[cont_cols] = pd.DataFrame(scaler.fit_transform(df_deep[cont_cols]),columns = cont_cols)
+    df_deep,unique_vals = val2idx(df_deep,embedding_cols)
+
+    train = df_deep[df_deep.IS_TRAIN == 1].drop('IS_TRAIN',axis=1)
+    test = df_deep[df_deep.IS_TRAIN == 0].drop('IS_TRAIN',axis=1)
+
+    embeddings_tensors = []
+    n_factors = 8
+    reg = 1e-3
+    
+    for ec in embedding_cols:
+        layer_name = ec + "_inp"
+        t_inp,t_build = embedding_input(layer_name,unique_vals[ec],n_factors,reg)
+        embedding_tensors.append((t_inp,t_build))
+        del(t_inp,t_build)
+    
+    continuous_tensors = []
+
+    for cc in cont_cols:
+        layer_name = cc + "_in"
+        t_inp,t_build = continous_input(layer_name)
+        continuous_tensors.append(t_inp,t_build)
+        del(t_inp,t_build)
+    
+    X_train = [train[c] for c in deep_cols]
+    y_train = np.array(train[target].values).reshape(-1,1)
+    X_test = [test[c] for c in deep_cols]
+    y_test = np.array(test[target].values).reshape(-1,1)
+
+    if method == 'muticlass':
+        y_train = onehot(y_train)
+        y_test = onehot(y_test)
+
+    inp_layer  = [et[0] for et in embedding_tensors]
+    inp_layer += [ct[0] for ct in continuous_tensors]
+
+    inp_embed = [et[1] for et in embedding_tensors]
+    inp_embed += [ct[1] for ct in continuous_tensors]
+
+
+    
+    if model_type == "deep":
+        activation,loss,metrics = fit_param[method]
+        if metrics:
+            metrics = [metrics]
+        
+        d = concatenate(inp_embed)
+        d = Flatten()(d)
+        d = Dense(100,activation='relu',kernel_regularizer=l1_l2(l1=0.01,l2=0.01))(d)
+        d = Dropout(0.5)(d) # Dropout don't seem to help in this model
+        d = Dense(50,activation='relu')(d)
+        d = Dropout(0.5)(d)
+        d = Dense(y_train.shape[1],activation=activation)(d)
+        deep = Model(inp_layer,d)
+        deep.complie(loss=loss,metics=metics,optimizer='Adam')
+        deep.fit(X_train,y_train,batch_size=64,nb_epoch=10)
+        results = deep.evaluate(X_test,y_test)
+        print("\n",results)
+
+    else:
+        return X_train,y_train,X_test,y_test,inp_embed,inp_layer
 
 
 def wide_deep(df_train,df_test,wide_cols,x_cols,embedding_cols,cont_cols,method):
+
+    “”“
+        Run the wide and deep model. Parameters are the same as those for the wide and deep function
+        wide and deep function
+    ”“”
+
+    X_train_wide,y_train_wide,X_test_wide,y_test_wide = wide(df_train,df_test,wide_cols,x_cols,target,model_type,method)
+    X_train_deep,y_train_deep,X_test_deep,y_test_deep,deep_inp_embed,deep_inp_layer = deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method)
+
+
+    X_tr_wd = [X_train_wide] + X_train_deep
+    Y_tr_wd = y_train_deep #wide or deep is the same here
+    X_te_wd = [X_test_wide] + X_test_deep
+    Y_te_wd = y_test_deep
+
+    activation,loss,metrics = fit_param[method]
+    if metrics:metrics = [metrics]
+
+    #WIDE
+    w = Input(shape=(X_train_wide.shape[1],),dtype='float32',name='wide')
+
+    #DEEP: the output of the 50 neurons layer will be the deep-side input
+    d = concatenate(deep_inp_embed)
+    d = Flatten()(d)
+    d = Dense(50,activation='relu',kernel_regularizer=l1_l2(l1=0.01,l2=0.02))(d)
+    d = Dropout(0.5)(d) # Dropout don't seem to help in this model
+    d = Dense(20,activation='relu',name='deep')(d)
+    d = Dropout(0.5)(d)
+
+    #WIDE + DEEP
+    wd_inp = concatenate([w,d])
+    wd_out = Dense(Y_tr_wd.shape[1],activation=activation,name='wide_deep')(wd_inp)
+    wide_deep = Model(inputs=[w] + deep_inp_layer,outputs=wd_out)
+    wide_deep.complie(optimizer='Adam',loss=loss,metrics=metrics)
+    wide_deep.fit(X_tr_wd,Y_tr_wd,epochs=5,batch_size=128)
+
+    #Maybe you want to schedule a second search with lower learning rate
+    wide_deep.optimizer.lr = 0.0001
+    wide_deep.fit(X_tr_wd,Y_tr_wd,epochs=5,batch_size=128)
+
+    results = wide_deep.evaluate(X_te_wd,Y_te_wd)
+    print("\n",results)
+   
+    deep Model
+
+
+
     return 0
 
 if __name__ == '__main__':
