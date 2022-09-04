@@ -1,6 +1,7 @@
 #-*—coding:utf-8-*-
 import pandas as pd
 import argparse
+import numpy as np
 import os
 from sklearn.preprocessing import OneHotEncoder,MinMaxScaler,StandardScaler
 from keras.layers import Dense
@@ -114,13 +115,14 @@ def wide(df_train,df_test,wide_cols,x_cols,target,model_type,method):
     #生成交叉特征column的名称字典
     crossed_columns_d = cross_columns(x_cols)
 
-    categorical_columns = list(df_wide.select_types(include=['object'].columns))
-    wide_cols += list(crossed_columns_d.items())
+    categorical_columns = list(df_wide.select_dtypes(include=['object']).columns)
+    wide_cols += list(crossed_columns_d.keys())
 
     for k,v in crossed_columns_d.items():
         df_wide[k] = df_wide[v].apply(lambda x: '-'.join(x),axis=1)
     
     #df 特征选择，目标选择，是否训练
+    print(wide_cols + [target] + ['IS_TRAIN'])
     df_wide = df_wide[wide_cols + [target] + ['IS_TRAIN']]
 
     #计算需要向量化的特征列
@@ -139,7 +141,7 @@ def wide(df_train,df_test,wide_cols,x_cols,target,model_type,method):
     X_train = train[feature_cols].values
     y_train = train[target].values.reshape(-1,1)
 
-    X_test = test[cols].values
+    X_test = test[feature_cols].values
     y_test = test[target].values.reshape(-1,1)
 
     
@@ -155,7 +157,7 @@ def wide(df_train,df_test,wide_cols,x_cols,target,model_type,method):
         wide_inp = Input(shape=(X_train.shape[1],),dtype='float32',name='wide_inp')
         w = Dense(y_train.shape[1],activation=activation)(wide_inp)
         wide = Model(wide_inp,w)
-        wide.complie(loss=loss,metrics = metrics,optimizer='Adam')
+        wide.compile(loss=loss,metrics = metrics,optimizer='Adam')
         wide.fit(X_train,y_train,nb_epoch=10,batch_size=64)
         results = wide.evaluate(X_test,y_test)
         print("\n",results)
@@ -172,6 +174,7 @@ def deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method):
     deep_cols = embedding_cols + cont_cols
     df_deep = df_deep[deep_cols + [target,'IS_TRAIN']]
 
+    scaler = StandardScaler()
     df_deep[cont_cols] = pd.DataFrame(scaler.fit_transform(df_deep[cont_cols]),columns = cont_cols)
     df_deep,unique_vals = val2idx(df_deep,embedding_cols)
 
@@ -185,7 +188,7 @@ def deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method):
     for ec in embedding_cols:
         layer_name = ec + "_inp"
         t_inp,t_build = embedding_input(layer_name,unique_vals[ec],n_factors,reg)
-        embedding_tensors.append((t_inp,t_build))
+        embeddings_tensors.append((t_inp,t_build))
         del(t_inp,t_build)
     
     continuous_tensors = []
@@ -193,7 +196,7 @@ def deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method):
     for cc in cont_cols:
         layer_name = cc + "_in"
         t_inp,t_build = continous_input(layer_name)
-        continuous_tensors.append(t_inp,t_build)
+        continuous_tensors.append((t_inp,t_build))
         del(t_inp,t_build)
     
     X_train = [train[c] for c in deep_cols]
@@ -205,10 +208,10 @@ def deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method):
         y_train = onehot(y_train)
         y_test = onehot(y_test)
 
-    inp_layer  = [et[0] for et in embedding_tensors]
+    inp_layer  = [et[0] for et in embeddings_tensors]
     inp_layer += [ct[0] for ct in continuous_tensors]
 
-    inp_embed = [et[1] for et in embedding_tensors]
+    inp_embed = [et[1] for et in embeddings_tensors]
     inp_embed += [ct[1] for ct in continuous_tensors]
 
 
@@ -226,7 +229,7 @@ def deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method):
         d = Dropout(0.5)(d)
         d = Dense(y_train.shape[1],activation=activation)(d)
         deep = Model(inp_layer,d)
-        deep.complie(loss=loss,metics=metics,optimizer='Adam')
+        deep.compile(loss=loss,metics=metics,optimizer='Adam')
         deep.fit(X_train,y_train,batch_size=64,nb_epoch=10)
         results = deep.evaluate(X_test,y_test)
         print("\n",results)
@@ -235,12 +238,12 @@ def deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method):
         return X_train,y_train,X_test,y_test,inp_embed,inp_layer
 
 
-def wide_deep(df_train,df_test,wide_cols,x_cols,embedding_cols,cont_cols,method):
+def wide_deep(df_train,df_test,wide_cols,x_cols,embedding_cols,cont_cols,method,target):
 
-    “”“
+    """
         Run the wide and deep model. Parameters are the same as those for the wide and deep function
         wide and deep function
-    ”“”
+    """
 
     X_train_wide,y_train_wide,X_test_wide,y_test_wide = wide(df_train,df_test,wide_cols,x_cols,target,model_type,method)
     X_train_deep,y_train_deep,X_test_deep,y_test_deep,deep_inp_embed,deep_inp_layer = deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method)
@@ -269,20 +272,15 @@ def wide_deep(df_train,df_test,wide_cols,x_cols,embedding_cols,cont_cols,method)
     wd_inp = concatenate([w,d])
     wd_out = Dense(Y_tr_wd.shape[1],activation=activation,name='wide_deep')(wd_inp)
     wide_deep = Model(inputs=[w] + deep_inp_layer,outputs=wd_out)
-    wide_deep.complie(optimizer='Adam',loss=loss,metrics=metrics)
-    wide_deep.fit(X_tr_wd,Y_tr_wd,epochs=5,batch_size=128)
+    wide_deep.compile(optimizer='Adam',loss=loss,metrics=metrics)
+    wide_deep.fit(X_tr_wd,Y_tr_wd,epochs=10,batch_size=128)
 
     #Maybe you want to schedule a second search with lower learning rate
     wide_deep.optimizer.lr = 0.0001
-    wide_deep.fit(X_tr_wd,Y_tr_wd,epochs=5,batch_size=128)
+    wide_deep.fit(X_tr_wd,Y_tr_wd,epochs=10,batch_size=128)
 
     results = wide_deep.evaluate(X_te_wd,Y_te_wd)
     print("\n",results)
-   
-    deep Model
-
-
-
     return 0
 
 if __name__ == '__main__':
@@ -341,7 +339,7 @@ if __name__ == '__main__':
     elif model_type == "deep":
         deep(df_train,df_test,embedding_cols,cont_cols,target,model_type,method)
     else:
-        wide_deep(df_train,df_test,wide_cols,x_cols,embedding_cols,cont_cols,method)
+        wide_deep(df_train,df_test,wide_cols,x_cols,embedding_cols,cont_cols,method,target)
     
 
 
