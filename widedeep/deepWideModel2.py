@@ -323,7 +323,7 @@ if __name__ == '__main__':
     #columns for wide model
     wide_cols = ['workclass','education','marital_status','occupation'
     ,'relationship','race','gender','native_country','age_group']
-    x_cols = (['education','occupation'],['native_country','occupation'])
+    x_cols = (['education','occupation'],['native_country','occupation'],['education','gender'])
 
     #columns for deep model
     embedding_cols = ['workclass','education','marital_status','occupation'
