@@ -11,6 +11,9 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 
 
+
+
+
 class Data:
     def __init__(self,config):
         self.config = config
@@ -79,6 +82,7 @@ class Data:
         sample_interval = min(feature_data.shape[0],self.config.time_step) #防止time_step大于测试集数量
         self.start_num_in_test = feature_data.shape[0] % sample_interval
         time_step_size = feature_data.shape[0] // sample_interval 
+        print("time_step_size:",time_step_size)
 
         test_x = [feature_data[self.start_num_in_test + i*sample_interval:self.start_num_in_test+(i+1)*sample_interval] for i in range(time_step_size)]
         if return_label_data:
@@ -128,17 +132,19 @@ class Config:
     patience = config_obj["train_argument"]["patience"]
     random_seed = config_obj["train_argument"]["random_seed"]
     do_continue_train = config_obj["train_argument"]["do_continue_train"]
+    continue_flag = config_obj["train_argument"]["continue_flag"]
     if do_continue_train:
         shuffle_train_data = False
         batch_size = 1
         continue_flag = "continue_"
 
-    continue_flag = config_obj["train_argument"]["continue_flag"]
 
     #train mode
     debug_mode = config_obj["train_mode"]["debug_mode"]
     debug_num = config_obj["train_mode"]["debug_num"]
     user_frame =config_obj["train_mode"]["user_frame"]
+
+    model_name = "model_" + continue_flag + user_frame + ".h5"
 
 
     #path argument
@@ -192,6 +198,21 @@ def load_logger(config):
     return logger
 
 
+def draw(config: Config, origin_data: Data,logger, predict_norm_data:np.ndarray):
+    label_data = origin_data.data[origin_data.train_num + origin_data.start_num_in_test : , config.label_in_feature_index]
+    predict_data = predict_norm_data * origin_data.std[config.label_in_feature_index] + origin_data.mean[config.label_in_feature_index]
+
+    assert label_data.shape[0] == predict_data.shape[0]
+
+    label_name = [origin_data.data_column_name[i] for i in config.label_in_feature_index]
+    label_column_num = len(config.label_columns)
+
+    loss = np.mean((label_data[config.predict_day:] - predict_data[:-config.predict_day]) ** 2, axis=0)
+    loss_norm = loss/(origin_data.std[config.label_in_feature_index] ** 2)
+    logger.info("the mean squared error of stock {} is ".format(label_name) + str(loss_norm))
+
+
+
 
 
 def main(config):
@@ -199,11 +220,20 @@ def main(config):
     try:
         np.random.seed(config.random_seed) #设置随机种子，保证可复现
         data_gainer = Data(config)
+        if config.user_frame == "keras":
+            print("config.user_frame:",config.user_frame)
+            from model.model_keras import train,predict        
         if config.do_train:
             train_X,valid_X,train_Y,valid_Y = data_gainer.get_train_and_valid_data()
-        
+            train(config,logger,[train_X,train_Y,valid_X,valid_Y])
+
         if config.do_predict:
             test_X,test_Y = data_gainer.get_test_data(return_label_data=True)
+            print("test_X shape:",test_X.shape)
+            print("test_Y shape:",test_Y.shape)
+            pred_result = predict(config, test_X)
+            draw(config,data_gainer,logger,pred_result)
+            print("pred_result:",pred_result)
 
     except Exception:
         logger.error("Run Error",exc_info=True)

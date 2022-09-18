@@ -9,7 +9,7 @@
 
     "network_argument":
     {
-        "input_size": 10,
+        "input_size": 7,
         "output_size": 2,
         "hidden_size":128,
         "lstm_layers":2,
@@ -21,7 +21,7 @@
     {
         "do_train":true,
         "do_predict":true,
-        "add_train":true,
+        "add_train":false,
         "shuffle_train_data":true,
         "use_cuda":false,
         "train_data_rate":0.95,
@@ -37,8 +37,8 @@
 
     "train_mode":
     {
-        "debug_mode":true,
-        "debug_num":30,
+        "debug_mode":false,
+        "debug_num":500,
         "user_frame":"keras"
     },
 
@@ -47,8 +47,8 @@
         "model_save_path":"./checkpoint/",
         "figure_save_path":"./figure",
         "log_save_path":"./log/",
-        "do_log_print_to_screen":true,
-        "do_log_save_to_file":false,
+        "do_log_print_to_screen":false,
+        "do_log_save_to_file":true,
         "do_figure_save":false,
         "do_train_visualized":false
     }
