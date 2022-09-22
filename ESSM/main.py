@@ -4,6 +4,8 @@ from essm import CTCVRNet
 import tensorflow as tf
 from tensorflow.keras import optimizers
 from tensorflow.keras.callbacks import ModelCheckpoint,ReduceLROnPlateau,EarlyStopping
+import time 
+
 #from model_train import train_model
 
 #build the generate of data(train)
@@ -69,5 +71,20 @@ reduce_lr = ReduceLROnPlateau(monitor='val_loss',factor=0.8,patience=2,min_lr=0.
 earlystopping = EarlyStopping(monitor='val_loss',min_delta=0.0001,patience=8,verbose=1,mode='auto')
 callbacks = [checkpoint,reduce_lr,earlystopping]
 
-#train_model
 
+#model_train
+ctcvr_model.fit([ctr_user_numerical_feature_train, ctr_user_cate_feature_train, ctr_item_numerical_feature_train,
+	                 ctr_item_cate_feature_train, cvr_user_numerical_feature_train, cvr_user_cate_feature_train,
+	                 cvr_item_numerical_feature_train,
+	                 cvr_item_cate_feature_train], [ctr_target_train, cvr_target_train], batch_size=256, epochs=50,
+	                validation_data=(
+		                [ctr_user_numerical_feature_val, ctr_user_cate_feature_val, ctr_item_numerical_feature_val,
+		                 ctr_item_cate_feature_val, cvr_user_numerical_feature_val, cvr_user_cate_feature_val,
+		                 cvr_item_numerical_feature_val,
+		                 cvr_item_cate_feature_val], [ctr_target_val, cvr_target_val]), callbacks=callbacks,
+	                verbose=0,
+	                shuffle=True)
+#load model and save as tf_serving model
+saved_model_path = './esmm/{}'.format(int(time.time()))
+ctcvr_model = tf.keras.models.load_model('esmm_best.h5')
+tf.saved_model.save(ctcvr_model,saved_model_path)
