@@ -53,10 +53,6 @@ for idx,col in enumerate(ctr_item_cate_feature_train.columns):
 
 
 
-print(cate_feature_dict)
-print(user_cate_feature_dict)
-print(item_cate_feature_dict)
-
 ctcvr = CTCVRNet(cate_feature_dict)
 ctcvr_model = ctcvr.build(user_cate_feature_dict,item_cate_feature_dict)
 opt = optimizers.Adam(lr=0.003,decay=0.0001)
