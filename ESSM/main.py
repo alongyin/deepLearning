@@ -60,7 +60,7 @@ print(item_cate_feature_dict)
 ctcvr = CTCVRNet(cate_feature_dict)
 ctcvr_model = ctcvr.build(user_cate_feature_dict,item_cate_feature_dict)
 opt = optimizers.Adam(lr=0.003,decay=0.0001)
-ctcvr_model.compile(optimizer=opt,loss=['binary_crossentropy','binary_crossentropy'],loss_weight=[1.0,1.0],metrics=[tf.keras.metrics.AUC()])
+ctcvr_model.compile(optimizer=opt,loss=['binary_crossentropy','binary_crossentropy'],loss_weights=[1.0,1.0],metrics=[tf.keras.metrics.AUC()])
 
 #keras model save path
 filepath = 'esmm_best.h5'

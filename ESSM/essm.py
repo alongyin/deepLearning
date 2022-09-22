@@ -2,8 +2,8 @@ import tensorflow as tf
 
 #是否使用GPU
 
-tf.config.set_soft_device_placement(True)
-tf.debugging.set_log_device_placement(True)
+tf.config.set_soft_device_placement(False)
+tf.debugging.set_log_device_placement(False)
 
 from tensorflow.keras import Model
 from tensorflow.keras import layers
@@ -11,7 +11,7 @@ from tensorflow.keras import layers
 class CTCVRNet:
     def __init__(self,cate_feature_dict):
         self.embed = dict()
-        for k,v in cate_feature_dict:
+        for k,v in cate_feature_dict.items():
             self.embed[k] = layers.Embedding(v,64)
 
     def build_ctr_model(self,ctr_user_numerical_input,ctr_user_cate_input,ctr_item_numerical_input,ctr_item_cate_input,ctr_user_cate_feature_dict,ctr_item_cate_feature_dict):
