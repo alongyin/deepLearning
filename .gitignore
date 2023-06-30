@@ -1,0 +1,10 @@
+DIN/aa
+DIN/ab
+DIN/ac
+*.pyc
+*.pkl
+*.index
+*.pb
+*.h5
+*.csv
+variables.*
